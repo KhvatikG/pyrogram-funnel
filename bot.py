@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, UTC
 from logger import logger
 
 from tools import (insert_user, update_user_status, update_user_state,
-                   send_message, check_for_triggers, get_db_connection)
+                   send_message, check_for_triggers, get_db_connection, check_user_alive)
 
 from conf import API_ID, API_HASH
 
@@ -59,7 +59,7 @@ async def start_sender(client: Client):
                 minutes=1)  # timedelta(minutes=39) if user['state'] == 'msg1_sent' else None
             msg3_time = status_updated_at + timedelta(
                 minutes=1)
-            # timedelta(days=1, hours=2) if (user['state'] == 'msg2_sent' or user['state'] == 'msg2_skip' else None
+            # timedelta(days=1, hours=2) if (user['state'] == 'msg2_sent' or user['state'] == 'msg2_skip') else None
 
             match state:
                 case 'new_user':
@@ -69,41 +69,30 @@ async def start_sender(client: Client):
 
                         if trigger_type:  # Если триггер найден
                             logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                            await update_user_status(conn, user_id, 'finished')
+                            await update_user_status(conn, user_id, 'finished')  # Меняем статус на 'finished'
                         else:
                             logger.debug(f'new_user {user_id} триггеров не найдено')
                             await send_message(client, user_id, TEXTS['msg1'], 'msg1_sent')  # Отправляем Текст1
-                        # Если удачно отправили бновляем статус что все ещё alive(можно просто обновить время статуса)
-                        # Если неудачно меняем статус на dead и фиксируем время
-                        # Обновляем время обновления статуса
-                        # Меняем state на msg1_sent
 
                 case 'msg1_sent':
                     if current_time >= msg2_time:
-                        # Чекаем файнал триггеры
+                        # Чекаем все триггеры
                         trigger_type = await check_for_triggers(client, user_id, FINAL_TRIGGERS, SKIP_TRIGGERS)
-                        # Чекаем Тригер1 -> продолжаем либо пропускаем(пропуск тоже фиксим по времени)
 
                         match trigger_type:
-                            case None:
+                            case None:  # Триггеры не найдены
                                 logger.debug(f'msg1_sent {user_id} триггеров не найдено')
                                 await send_message(client, user_id, TEXTS['msg2'], 'msg2_sent')  # Отправляем Текст2
 
-                            case 'final':
+                            case 'final':  # Найден файнал триггер
                                 logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                                await update_user_status(conn, user_id, 'finished')
+                                await update_user_status(conn, user_id, 'finished')  # Меняем статус на 'finished'
 
-                            case 'skip':
+                            case 'skip':  # Найден скип триггер
                                 logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
                                 await update_user_state(conn, user_id, 'msg2_skip')
-                                #  Нужно чекнуть что alive !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                                #  Обновляем время для отсчета следующего сообщения
-                                await update_user_status(conn, user_id, 'alive')
-
-                        # Если удачно отправили бновляем статус что все ещё alive(можно просто обновить время статуса)
-                        # Если неудачно меняем статус на dead и фиксируем время
-                        # Обновляем время обновления статуса
-                        # Меняем state на msg2_sent
+                                #  Чекаем 'alive' и обновляем время для отсчета следующего сообщения
+                                await check_user_alive(client, user_id)
 
                 case 'msg2_sent' | 'msg2_skip':
                     if current_time >= msg3_time:
@@ -117,14 +106,9 @@ async def start_sender(client: Client):
                             logger.debug(f'msg2_sent {user_id} триггеров не найдено')
                             await send_message(client, user_id, TEXTS['msg3'], 'msg3_sent')  # Отправляем Текст3
 
-                        # Если удачно отправили бновляем статус что все ещё alive(можно просто обновить время статуса)
-                        # Если неудачно меняем статус на dead и фиксируем время
-                        # Меняем state на msg3_sent
+            await asyncio.sleep(0.1)
 
-            # await client.send_message(user_id, 'тест')
-            await asyncio.sleep(0.3)
-
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)  # Ждём между проверками
 
 
 async def start_handler(client):

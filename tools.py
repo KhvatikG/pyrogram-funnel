@@ -60,6 +60,34 @@ async def update_user_state(conn, user_id: int, state: str):
         logger.critical(f'Не удалось сменить состояние юзеру {user_id} - {exc}')
 
 
+async def check_user_alive(client: Client, user_id: int, test_message: str = 'ㅤ'):
+    """
+    Проверяет является ли пользователь доступным для сообщений, по умолчанию отправляет неотображаемый символ,
+    позволяет использовать любую строку в качестве тестового сообщения.
+
+    Пытается отправить тестовое сообщение, в случае удачи удаляет его и обновляет статус 'alive' в db.
+    В случае неудачи меняет статус на 'dead' в случаях UserIsBlocked | UserBlocked | UserDeactivated.
+    В остальных случаях просто пишет ошибку в логи.
+
+    :param client: объект client класса Client
+    :param user_id: id юзера, alive которого нужно проверить
+    :param test_message: текст тестового сообщения
+    """
+
+    conn = await get_db_connection()
+    try:
+        sent_message = await client.send_message(user_id, test_message)
+        await client.delete_messages(user_id, message_ids=sent_message.id)
+
+    except errors.UserIsBlocked or errors.UserBlocked or errors.UserDeactivated as exc:
+        logger.warning(f'Исключение при проверке доступности пользователя{user_id}: {exc}')
+        await update_user_status(conn, user_id, 'dead')
+        await conn.close()
+
+    except Exception as exc:
+        logger.error(f'Непредвиденная ошибка при отправке сообщения: {exc}')
+
+
 async def send_message(client: Client, user_id: int, message_text: str, state: str | None = None):
     """
     Отправляет сообщение юзеру с id user_id и обновляет статус alive в случае удачи
