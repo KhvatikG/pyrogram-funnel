@@ -114,10 +114,9 @@ async def start_sender(client: Client):
 async def start_handler(client):
     @client.on_message()
     async def handle_message(_, message: Message):
-        if message.text == 'тест1':  # Для теста
-            conn = await get_db_connection()
-            await insert_user(conn=conn, user_id=message.from_user.id)
-            await conn.close()
+        conn = await get_db_connection()
+        await insert_user(conn=conn, user_id=message.from_user.id)
+        await conn.close()
 
 
 async def main():
