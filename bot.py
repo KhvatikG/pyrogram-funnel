@@ -1,133 +1,26 @@
 import asyncio
-from pyrogram import Client
-from pyrogram.types import Message
-from datetime import datetime, timedelta, UTC
-from logger import logger
 
-from tools import (insert_user, update_user_status, update_user_state,
-                   send_message, check_for_triggers, get_db_connection, check_user_alive)
+from pyrogram import Client, idle
+from core.models import db_helper, Base
+from message_handler import start_message_handler
 
-from conf import API_ID, API_HASH
+from core.config import settings
+from message_scheduler import send_scheduled_messages
 
-# Можно перенести в конфиг
-SKIP_TRIGGERS = {'Триггер1', }
-FINAL_TRIGGERS = {'прекрасно', 'ожидать'}
-TEXTS = {'msg1': 'Текст1',
-         'msg2': 'Текст2',
-         'msg3': 'Текст3'
-         }
-
-
-async def init_db():
-    # Подключаемся к базе данных
-    try:
-        conn = await get_db_connection()
-
-        # Выполняем запросы для создания таблиц
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-            id integer PRIMARY KEY,
-            state TEXT NOT NULL DEFAULT 'new_user' CHECK (
-            state IN ('new_user', 'msg1_sent', 'msg2_sent', 'msg2_skip', 'msg3_sent')),
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-            status TEXT NOT NULL DEFAULT 'alive' CHECK (status IN ('alive', 'dead', 'finished')),
-            status_updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp)
-        ''')
-
-        await conn.close()
-        logger.debug(f'db init done')
-    except Exception as exc:
-        logger.critical(f'db init err: {exc}')
-
-
-async def start_sender(client: Client):
-    conn = await get_db_connection()
-    while True:
-        current_time = datetime.now(UTC)
-        # Получаем пользователей со статусом alive
-        users = await conn.fetch("SELECT * FROM users WHERE status = 'alive';")
-
-        # Итерируемм по юзерам
-        for user in users:
-            user_id = user['id']
-            status_updated_at = user['status_updated_at']
-            state = user['state']
-
-            # Время для отправки
-            msg1_time = status_updated_at + timedelta(minutes=1)  # timedelta(minutes=6)
-            msg2_time = status_updated_at + timedelta(
-                minutes=1)  # timedelta(minutes=39) if user['state'] == 'msg1_sent' else None
-            msg3_time = status_updated_at + timedelta(
-                minutes=1)
-            # timedelta(days=1, hours=2) if (user['state'] == 'msg2_sent' or user['state'] == 'msg2_skip') else None
-
-            match state:
-                case 'new_user':
-                    if current_time >= msg1_time:
-                        # Чекаем файнал триггеры
-                        trigger_type = await check_for_triggers(client, user_id, FINAL_TRIGGERS)
-
-                        if trigger_type:  # Если триггер найден
-                            logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                            await update_user_status(conn, user_id, 'finished')  # Меняем статус на 'finished'
-                        else:
-                            logger.debug(f'new_user {user_id} триггеров не найдено')
-                            await send_message(client, user_id, TEXTS['msg1'], 'msg1_sent')  # Отправляем Текст1
-
-                case 'msg1_sent':
-                    if current_time >= msg2_time:
-                        # Чекаем все триггеры
-                        trigger_type = await check_for_triggers(client, user_id, FINAL_TRIGGERS, SKIP_TRIGGERS)
-
-                        match trigger_type:
-                            case None:  # Триггеры не найдены
-                                logger.debug(f'msg1_sent {user_id} триггеров не найдено')
-                                await send_message(client, user_id, TEXTS['msg2'], 'msg2_sent')  # Отправляем Текст2
-
-                            case 'final':  # Найден файнал триггер
-                                logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                                await update_user_status(conn, user_id, 'finished')  # Меняем статус на 'finished'
-
-                            case 'skip':  # Найден скип триггер
-                                logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                                await update_user_state(conn, user_id, 'msg2_skip')
-                                #  Чекаем 'alive' и обновляем время для отсчета следующего сообщения
-                                await check_user_alive(client, user_id)
-
-                case 'msg2_sent' | 'msg2_skip':
-                    if current_time >= msg3_time:
-                        # Чекаем файнал триггеры
-                        trigger_type = await check_for_triggers(client, user_id, FINAL_TRIGGERS)
-
-                        if trigger_type:  # Если триггер найден
-                            logger.info(f'Найден триггер {trigger_type} у пользователя {user_id}')
-                            await update_user_status(conn, user_id, 'finished')
-                        else:
-                            logger.debug(f'msg2_sent {user_id} триггеров не найдено')
-                            await send_message(client, user_id, TEXTS['msg3'], 'msg3_sent')  # Отправляем Текст3
-
-            await asyncio.sleep(0.1)
-
-        await asyncio.sleep(60)  # Ждём между проверками
-
-
-async def start_handler(client):
-    @client.on_message()
-    async def handle_message(_, message: Message):
-        conn = await get_db_connection()
-        await insert_user(conn=conn, user_id=message.from_user.id)
-        await conn.close()
-
+app = Client(name='me_client', api_id=settings.API_ID, api_hash=settings.API_HASH)
 
 async def main():
-    client = Client(name='me_client', api_id=API_ID, api_hash=API_HASH)
+    # Инициализируем базу данных
+    async with db_helper.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    await init_db()
-    await client.start()
-    await start_handler(client)
-    await start_sender(client)
+    # Вызываем функцию для добавления обработчика сообщений
+    await start_message_handler(app)
 
-    await client.stop()
+    await asyncio.gather(
+        asyncio.create_task(send_scheduled_messages(app)),
+        app.run()
+    )
 
 
 if __name__ == '__main__':
