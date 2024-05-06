@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select, func
 
+from core.logger import logger
 from core.config import settings
 from core.models import db_helper, User, State, Status
 from triger_cheker import check_skip_triggers, check_final_triggers
@@ -70,8 +71,9 @@ async def send_scheduled_messages(app):
 
 async def process_user(user, session, message_key, app, check_skip=False):
     try:
-        sent_messages = await app.get_history(user.user_id, limit=10)
+        sent_messages = await app.get_history(user.id, limit=10)
         if check_skip and check_skip_triggers(sent_messages):
+            logger.info(f'Пользователь {user.id} обнаружен триггер, ссобщение {message_key} не отправлено.')
             user.state = State[f'{message_key}_skipped']
             user.state_updated_at = func.now()
             await session.commit()
@@ -80,13 +82,16 @@ async def process_user(user, session, message_key, app, check_skip=False):
             user.status = Status.finished
             user.status_updated_at = func.now()
             await session.commit()
+            logger.info(f'Пользователь {user.id} обнаружен триггер, воронка окончена.')
             return
 
-        await app.send_message(user.user_id, settings.TEXTS[message_key])
+        await app.send_message(user.id, settings.TEXTS[message_key])
         user.state = State[f'{message_key}_sent']
         user.state_updated_at = func.now()
         await session.commit()
-    except Exception:
+        logger.info(f'Сообщение {message_key} отправлено пользователю {user.id}')
+    except Exception as exc:
+        logger.info(f'При отправке сообщения {message_key} пользователю {user.id} произошла ошибка: {exc}')
         user.status = Status.dead
         user.status_updated_at = func.now()
         await session.commit()

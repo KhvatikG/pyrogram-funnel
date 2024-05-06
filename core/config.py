@@ -2,11 +2,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    API_ID: str
-    API_HASH: str
+    API_ID: str  # api_id телеграм
+    API_HASH: str  # api_hash телеграм
 
-    DB_URL: str
-    DB_ECHO = True
+    DB_URL: str  # url базы данных
+    DB_ECHO = True  # вывод команд базы данных
 
     SKIP_TRIGGERS = {'Триггер1', }  # Триггеры для пропуска сообщения
     FINAL_TRIGGERS = {'прекрасно', 'ожидать'}  # Тригеры для окончания воронки
