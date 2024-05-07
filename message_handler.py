@@ -6,9 +6,6 @@ from core.models import db_helper, User, State, Status
 
 
 async def handle_message(message: Message):
-    if message.text != 'тест':
-        logger.debug(f'Получено сообщение {message.text} от пользователя {message.from_user.id}')
-        return
     logger.info(f'Получено сообщение {message.text} от пользователя {message.from_user.id}')
     async with db_helper.session_factory() as session:
         # Проверяем, есть ли уже пользователь в базе данных
