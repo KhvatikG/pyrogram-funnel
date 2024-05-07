@@ -6,7 +6,6 @@ from core.models import db_helper, User, State, Status
 
 
 async def handle_message(message: Message):
-    print(message)
     if message.text != 'тест':
         logger.debug(f'Получено сообщение {message.text} от пользователя {message.from_user.id}')
         return
@@ -25,7 +24,3 @@ async def handle_message(message: Message):
             )
             session.add(new_user)
             await session.commit()
-
-
-#async def start_message_handler(app):
-#    app.add_handler(filters.private, handle_message)

@@ -12,9 +12,6 @@ from message_scheduler import send_scheduled_messages
 async def start_handler(client: Client):
     @client.on_message(filters=filters.private)
     async def handler_(_, message: Message):
-        await message.forward("me")
-        print(message)
-        await message.reply("Hi There!")
         await handle_message(message)
 
 
