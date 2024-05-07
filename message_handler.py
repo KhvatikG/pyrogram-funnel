@@ -1,4 +1,3 @@
-from pyrogram import filters
 from sqlalchemy import select
 from pyrogram.types import Message
 
@@ -7,7 +6,10 @@ from core.models import db_helper, User, State, Status
 
 
 async def handle_message(message: Message):
-    if message != 'тест': return
+    print(message)
+    if message.text != 'тест':
+        logger.debug(f'Получено сообщение {message.text} от пользователя {message.from_user.id}')
+        return
     logger.info(f'Получено сообщение {message.text} от пользователя {message.from_user.id}')
     async with db_helper.session_factory() as session:
         # Проверяем, есть ли уже пользователь в базе данных
@@ -17,7 +19,7 @@ async def handle_message(message: Message):
         if user is None:
             # Если пользователь не найден, добавляем его в базу данных
             new_user = User(
-                user_id=message.from_user.id,
+                id=message.from_user.id,
                 state=State.new_user,
                 status=Status.alive
             )
@@ -25,5 +27,5 @@ async def handle_message(message: Message):
             await session.commit()
 
 
-async def start_message_handler(app):
-    app.add_handler(filters.private & filters.incoming)(handle_message)
+#async def start_message_handler(app):
+#    app.add_handler(filters.private, handle_message)

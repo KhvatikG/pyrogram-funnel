@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, func
+from pyrogram import Client
+from pyrogram.errors import BotGroupsBlocked, UserBlocked, UserDeactivated, UserDeactivatedBan
 
 from core.logger import logger
 from core.config import settings
@@ -66,32 +68,36 @@ async def send_scheduled_messages(app):
                     app=app
                 )
 
-            await asyncio.sleep(60)  # Проверять каждую минуту
+            await asyncio.sleep(30)  # Проверять каждую минутуada
 
 
-async def process_user(user, session, message_key, app, check_skip=False):
+async def process_user(user, session, message_key, app: Client, check_skip=False):
     try:
-        sent_messages = await app.get_history(user.id, limit=10)
-        if check_skip and check_skip_triggers(sent_messages):
+        sent_messages = app.get_chat_history(user.id, limit=10)
+        if check_skip and await check_skip_triggers(sent_messages):
             logger.info(f'Пользователь {user.id} обнаружен триггер, ссобщение {message_key} не отправлено.')
             user.state = State[f'{message_key}_skipped']
             user.state_updated_at = func.now()
             await session.commit()
             return
-        if check_final_triggers(sent_messages):
+        if await check_final_triggers(sent_messages):
             user.status = Status.finished
             user.status_updated_at = func.now()
             await session.commit()
             logger.info(f'Пользователь {user.id} обнаружен триггер, воронка окончена.')
             return
 
+        logger.debug(f'Пользователь {user.id} тригеров необнаружено, отправляю {message_key}')
         await app.send_message(user.id, settings.TEXTS[message_key])
         user.state = State[f'{message_key}_sent']
         user.state_updated_at = func.now()
         await session.commit()
         logger.info(f'Сообщение {message_key} отправлено пользователю {user.id}')
-    except Exception as exc:
+    except (BotGroupsBlocked, UserBlocked, UserDeactivated, UserDeactivatedBan) as exc:
         logger.info(f'При отправке сообщения {message_key} пользователю {user.id} произошла ошибка: {exc}')
         user.status = Status.dead
         user.status_updated_at = func.now()
         await session.commit()
+    except Exception as exc:
+        logger.info(f'При отправке сообщения {message_key} пользователю {user.id} произошла ошибка: {exc}')
+
