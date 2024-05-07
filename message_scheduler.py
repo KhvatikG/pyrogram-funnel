@@ -100,4 +100,3 @@ async def process_user(user, session, message_key, app: Client, check_skip=False
         await session.commit()
     except Exception as exc:
         logger.info(f'При отправке сообщения {message_key} пользователю {user.id} произошла ошибка: {exc}')
-
