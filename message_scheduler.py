@@ -68,7 +68,7 @@ async def send_scheduled_messages(app):
                     app=app
                 )
 
-            await asyncio.sleep(30)  # Проверять каждую минутуada
+            await asyncio.sleep(60)  # Проверять каждую минуту
 
 
 async def process_user(user, session, message_key, app: Client, check_skip=False):
