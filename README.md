@@ -51,9 +51,9 @@
    В Windows командной строке:
    
 ```shell
-   set API_ID=123456
-   set API_HASH=abcdef1234567890
-   set DB_URL=postgresql://user:password@localhost/database
+   $env:API_ID=123456
+   $env:API_HASH=abcdef1234567890
+   $env:DB_URL=postgresql://user:password@localhost/database
 ```
 
 Убедитесь, что переменные среды установлены корректно перед запуском приложения.
